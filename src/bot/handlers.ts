@@ -4,7 +4,7 @@ import { ensureUser, getUserByTelegramId } from '../services/users';
 import { processReferral } from '../services/referrals';
 import { createClaimIfAvailable, getRewardStatus } from '../services/rewards';
 import { isChannelMember } from '../services/membership';
-import { getClaimByCode } from '../db/queries';
+import { countReferrals, getClaimByCode } from '../db/queries';
 import { mainKeyboard } from './keyboards';
 import { messages } from './messages';
 
@@ -22,7 +22,15 @@ export async function handleTelegramUpdate(update: TelegramUpdate, db: D1Databas
     if (payload?.startsWith('CLAIM_') && config.adminTelegramIds.has(telegramId)) {
       const claim = await getClaimByCode(db, payload);
       const user = claim ? await getUserByTelegramId(db, claim.telegram_id) : null;
-      await client.sendMessage(message.chat.id, claim ? `Claim ${claim.claim_code}\nUser: ${claim.telegram_id} (@${user?.username ?? 'n/a'})\nStatus: ${claim.status}\nCreated: ${claim.created_at}\nReview via admin endpoints.` : 'Claim not found.');
+      const referralCount = claim ? await countReferrals(db, claim.telegram_id) : null;
+      const approveEndpoint = `/admin/claims/${payload}/approve`;
+      const rejectEndpoint = `/admin/claims/${payload}/reject`;
+      await client.sendMessage(
+        message.chat.id,
+        claim
+          ? `Claim code: ${claim.claim_code}\nStatus: ${claim.status}\nReward count: ${claim.reward_count}\nUser Telegram ID: ${claim.telegram_id}\nUsername: @${user?.username ?? 'n/a'}\nReferral count: ${referralCount ?? 0}\nClaimed rewards: ${user?.claimed_rewards ?? 0}\nCreated: ${claim.created_at}\nReviewed: ${claim.reviewed_at ?? 'Not reviewed'}\n\nApprove endpoint:\nPOST ${approveEndpoint}\n\nReject endpoint:\nPOST ${rejectEndpoint}`
+          : 'Claim not found.',
+      );
       return;
     }
     await client.sendMessage(message.chat.id, messages.welcome, mainKeyboard());
@@ -49,7 +57,8 @@ export async function handleTelegramUpdate(update: TelegramUpdate, db: D1Databas
   if (action === 'my_status') {
     const membership = config.requiredChannelId ? await isChannelMember(client, config.requiredChannelId, telegramId) : null;
     const status = await getRewardStatus(db, telegramId, config.rewardThreshold);
-    const remaining = Math.max(0, config.rewardThreshold - (status.referrals % config.rewardThreshold || config.rewardThreshold));
+    const referralsMod = status.referrals % config.rewardThreshold;
+    const remaining = status.claimable > 0 ? 0 : (referralsMod === 0 ? config.rewardThreshold : config.rewardThreshold - referralsMod);
     await client.sendMessage(message.chat.id, `Referrals: ${status.referrals}\nThreshold: ${config.rewardThreshold}\nRemaining: ${status.claimable > 0 ? 0 : remaining}\nClaimable rewards: ${status.claimable}\nClaimed rewards: ${status.claimed}\nMembership: ${membership === null ? 'Disabled' : membership ? 'Member' : 'Not a member'}`);
     return;
   }
