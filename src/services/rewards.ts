@@ -4,9 +4,10 @@ export async function getRewardStatus(db: D1Database, telegramId: string, thresh
   const referrals = await countReferrals(db, telegramId);
   const user = await getUserByTelegramId(db, telegramId);
   const claimed = user?.claimed_rewards ?? 0;
-  const claimable = Math.max(0, Math.floor(referrals / threshold) - claimed);
+  const pendingClaims = await countClaimsByStatus(db, telegramId, 'pending');
+  const claimable = Math.max(0, Math.floor(referrals / threshold) - claimed - pendingClaims);
   const approvedClaims = await countClaimsByStatus(db, telegramId, 'approved');
-  return { referrals, claimed, claimable, approvedClaims };
+  return { referrals, claimed, claimable, approvedClaims, pendingClaims };
 }
 
 export async function createClaimIfAvailable(db: D1Database, telegramId: string, threshold: number): Promise<string | null> {

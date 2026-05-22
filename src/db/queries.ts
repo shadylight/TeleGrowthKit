@@ -12,6 +12,9 @@ export async function getUserByReferralCode(db:D1Database, code:string){return d
 export async function addReferral(db:D1Database, referrerId:string, referredId:string, code:string){
   await db.prepare('INSERT OR IGNORE INTO referrals (referrer_telegram_id,referred_telegram_id,referral_code,status) VALUES (?1,?2,?3,\'credited\')').bind(referrerId,referredId,code).run();
 }
+export async function setReferredByCodeIfNull(db:D1Database, referredId:string, code:string){
+  await db.prepare('UPDATE users SET referred_by_code=?1, updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?2 AND referred_by_code IS NULL').bind(code,referredId).run();
+}
 export async function countReferrals(db:D1Database, telegramId:string){const row=await db.prepare('SELECT COUNT(*) AS c FROM referrals WHERE referrer_telegram_id=?1 AND status=\'credited\'').bind(telegramId).first<{c:number}>();return row?.c ?? 0;}
 export async function getClaimByCode(db:D1Database, claimCode:string){return db.prepare('SELECT * FROM claims WHERE claim_code=?1').bind(claimCode).first<any>();}
 export async function insertClaim(db:D1Database, claimCode:string, telegramId:string){await db.prepare('INSERT INTO claims (claim_code,telegram_id,status,reward_count) VALUES (?1,?2,\'pending\',1)').bind(claimCode,telegramId).run();}
